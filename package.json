@@ -1,0 +1,15 @@
+{
+  "name": "w3a-backend",
+  "version": "1.0.0",
+  "description": "",
+  "main": "index.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "better-sqlite3": "^7.1.0",
+    "sync-request": "^6.1.0"
+  }
+}
