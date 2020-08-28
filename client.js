@@ -112,9 +112,11 @@ function get_hourly_stats() {
     return;
   }
 
+  let start_of_week = get_first_day_of_week(new Date(last_datetime * 1000), 1);
   let payload = {
     "start": last_datetime,
     "end": now,
+    "start_of_week": start_of_week,
   }
   console.log('payload:', payload);
 
@@ -125,15 +127,53 @@ function get_hourly_stats() {
   }
 
   let plain = JSON.parse(response.payload).Plain;
-  let hourly_stats = JSON.parse(plain).GetHourlyStats.hourly_stats;
-  console.log(hourly_stats);
-
-  for (let i in hourly_stats) {
-    let hs = hourly_stats[i];
+  let hourly_stat = JSON.parse(plain).GetHourlyStat.hourly_stat;
+  console.log(hourly_stat);
+  
+  let hourly_page_views = hourly_stat.hpv;
+  for (let i in hourly_page_views) {
+    let hs = hourly_page_views[i];
     let d = get_date_str(hs.timestamp * 1000).substring(0, 19);
     let now_str = get_date_str();
     let stmt = db.prepare("INSERT INTO hourly_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
     stmt.run(hs.sid, hs.pv_count, hs.cid_count, 0, d, d.split(' ')[0], now_str, now_str);
+  }
+
+  let site_clients = hourly_stat.sc;
+  for (let i in site_clients) {
+    let sc = site_clients[i];
+    let sid = sc.sid;
+    for (let j in sc.cids) {
+      let cid = sc.cids[j];
+      let result = db.prepare("SELECT * from site_clients where site_id = ? and cid = ?").all(sid, cid);
+      let now_str = get_date_str();
+      if (result.length == 0) {
+        let stmt = db.prepare("INSERT INTO site_clients(site_id, cid, created_at) VALUES(?, ?, ?)");
+        stmt.run(sid, cid, now_str);
+      }
+
+      result = db.prepare("SELECT * from clients where fingerprint = ?").all(cid);
+      if (result.length == 0) {
+        let stmt = db.prepare("INSERT INTO clients(fingerprint, created_at, updated_at) VALUES(?, ?, ?)");
+        stmt.run(cid, now_str, now_str);
+      }
+    }
+  }
+
+  let weekly_clients = hourly_stat.wc;
+  for (let i in weekly_clients) {
+    let wc = weekly_clients[i];
+    let sid = wc.sid;
+    let date_str = get_date_str(wc.timestamp * 1000).split(' ')[0];
+    for (let j in wc.cids) {
+      let cid = wc.cids[j];
+      let result = db.prepare("SELECT * from weekly_clients where site_id = ? and cid = ? and date = ?").all(sid, cid, date_str);
+      let now_str = get_date_str();
+      if (result.length == 0) {
+        let stmt = db.prepare("INSERT INTO weekly_clients(site_id, cid, date, created_at) VALUES(?, ?, ?, ?)");
+        stmt.run(sid, cid, date_str, now_str);
+      }
+    }
   }
 
   write_key('last_processed_hourly_stats_timestamp', last_get_hourly_stats.length == 0);
@@ -200,14 +240,35 @@ function get_seconds_from_date_str(date_str) {
   return Math.floor(new Date(date_str + 'Z').getTime() / 60000) * 60;
 }
 
-//function get_seconds_from_date_str_hourly(date_str) {
-//  return Math.round(get_seconds_from_date_str(date_str)/3600)*3600;
-//}
+function get_first_day_of_week(date, from_monday) {
+  let day_of_week = date.getDay();
+  let first_day_of_week = new Date(date);
+  let diff = day_of_week >= from_monday ? day_of_week - from_monday : 6 - day_of_week;
+  first_day_of_week.setDate(date.getDate() - diff);
+  first_day_of_week.setHours(0,0,0,0);
+
+  return first_day_of_week.getTime() / 1000;
+}
+
 
 async function main() {
   let args = process.argv.slice(2)
   if (args.length >= 1 && args[0] == "set") {
     set_page_views();
+    return;
+  }
+
+  if (args.length >= 1 && args[0] == "init") {
+    db.prepare("delete from clients").run();
+    //db.prepare("delete from daily_stats_reports").run();
+    db.prepare("delete from hourly_stats_reports").run();
+    //db.prepare("delete from key_values").run();
+    //db.prepare("delete from online_users_reports").run();
+    db.prepare("delete from site_clients").run();
+    db.prepare("delete from weekly_clients").run();
+    //db.prepare("delete from weekly_devices").run();
+    db.prepare("delete from weekly_sites_reports").run();
+    
     return;
   }
 
