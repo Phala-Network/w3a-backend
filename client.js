@@ -176,6 +176,40 @@ function get_hourly_stats() {
     }
   }
 
+  let weekly_sites = hourly_stat.ws;
+  for (let i in weekly_sites) {
+    let ws = weekly_sites[i];
+    let count = ws.count;
+    let d = get_date_str(ws.timestamp * 1000).split(' ')[0];
+    let now_str = get_date_str();
+
+    let result = db.prepare("SELECT * from weekly_sites_reports where site_id = ? and path = ? and date = ?").all(ws.sid, ws.path, d);
+    if (result.length > 0) {
+      let last_count = result[0].count;
+      db.prepare("UPDATE weekly_sites_reports set count = ? where site_id = ? and path = ? and date = ?").run(last_count + count, ws.sid, ws.path, d);
+    } else {
+      let stmt = db.prepare("INSERT INTO weekly_sites_reports(site_id, path, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+      stmt.run(ws.sid, ws.path, count, d, now_str, now_str);
+    }
+  }
+
+  let weekly_devices = hourly_stat.wd;
+  for (let i in weekly_devices) {
+    let wd = weekly_devices[i];
+    let count = wd.count;
+    let d = get_date_str(wd.timestamp * 1000).split(' ')[0];
+    let now_str = get_date_str();
+
+    let result = db.prepare("SELECT * from weekly_devices where site_id = ? and device = ? and date = ?").all(wd.sid, wd.device, d);
+    if (result.length > 0) {
+      let last_count = result[0].count;
+      db.prepare("UPDATE weekly_devices set count = ? where site_id = ? and device = ? and date = ?").run(last_count + count, wd.sid, wd.device, d);
+    } else {
+      let stmt = db.prepare("INSERT INTO weekly_devices(site_id, device, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+      stmt.run(wd.sid, wd.device, count, d, now_str, now_str);
+    }
+  }
+
   write_key('last_processed_hourly_stats_timestamp', last_get_hourly_stats.length == 0);
 }
 
