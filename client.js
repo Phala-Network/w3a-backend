@@ -18,7 +18,7 @@ function set_page_views() {
   for (let i in page_views) {
     let row = page_views[i];
 
-    let ts = get_seconds_from_date_str(row.created_at);
+    let ts = Math.floor(new Date(row.created_at + 'Z').getTime() / 1000);
     let payload = {
       "id": row.id,
       "sid": row.sid,
@@ -128,7 +128,7 @@ function get_hourly_stats() {
 
   let plain = JSON.parse(response.payload).Plain;
   let hourly_stat = JSON.parse(plain).GetHourlyStat.hourly_stat;
-  console.log(hourly_stat);
+  console.log('hourly_stat:', JSON.stringify(hourly_stat));
   
   let hourly_page_views = hourly_stat.hpv;
   for (let i in hourly_page_views) {
@@ -136,7 +136,16 @@ function get_hourly_stats() {
     let d = get_date_str(hs.timestamp * 1000).substring(0, 19);
     let now_str = get_date_str();
     let stmt = db.prepare("INSERT INTO hourly_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
-    stmt.run(hs.sid, hs.pv_count, hs.cid_count, 0, d, d.split(' ')[0], now_str, now_str);
+    stmt.run(hs.sid, hs.pv_count, hs.cid_count, hs.avg_duration, d, d.split(' ')[0], now_str, now_str);
+
+    let count = 0;
+    let result = db.prepare("SELECT * from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
+    if (result.length > 0) {
+      count = result[0].pv_count;
+    }
+
+    stmt = db.prepare("INSERT INTO total_stats_reports(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+    stmt.run(hs.sid, hs.cid_count, hs.pv_count + count, hs.avg_duration / 2, d, now_str, now_str);
   }
 
   let site_clients = hourly_stat.sc;
@@ -293,20 +302,26 @@ async function main() {
   }
 
   if (args.length >= 1 && args[0] == "init") {
-    db.prepare("delete from clients").run();
-    //db.prepare("delete from daily_stats_reports").run();
+    db.prepare("delete from key_values").run();
+    
+    db.prepare("delete from online_users_reports").run();
+    
     db.prepare("delete from hourly_stats_reports").run();
-    //db.prepare("delete from key_values").run();
-    //db.prepare("delete from online_users_reports").run();
+    db.prepare("delete from total_stats_reports").run(); // TODO: stat locally
+    db.prepare("delete from clients").run();
     db.prepare("delete from site_clients").run();
     db.prepare("delete from weekly_clients").run();
-    //db.prepare("delete from weekly_devices").run();
+    db.prepare("delete from weekly_devices").run(); // TODO: device name
     db.prepare("delete from weekly_sites_reports").run();
+    
+    // TODO:
+    // db.prepare("delete from daily_stats_reports").run();
     
     return;
   }
 
   //update_online_users();
+
   get_hourly_stats();
 }
 
