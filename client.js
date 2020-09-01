@@ -15,11 +15,12 @@ function set_page_views() {
   }
   //console.log(page_views);
   
+  let rows = [];
   for (let i in page_views) {
     let row = page_views[i];
 
     let ts = Math.floor(new Date(row.created_at + 'Z').getTime() / 1000);
-    let payload = {
+    let r = {
       "id": row.id,
       "sid": row.sid,
       "cid": row.cid,
@@ -30,12 +31,16 @@ function set_page_views() {
       "user_agent": row.ua,
       "created_at": ts
     }
-    console.log('payload:', payload);
-
-    send_request({"SetPageView": payload});
+    
+    rows.push(r);
   }
 
-  write_key('last_read_page_views', last_read.length == 0);
+  let payload = {
+    "page_views": rows
+  };
+  send_request({"SetPageView": payload});
+
+  write_key(db, 'last_read_page_views', last_read.length == 0);
 }
 
 function update_online_users() {
@@ -85,7 +90,7 @@ function update_online_users() {
     stmt.run(ou.sid, ou.cid_count, ou.ip_count, d, d.split(' ')[0], now_str, now_str);
   }
 
-  write_key('last_processed_online_users_timestamp', last_processed_online.length == 0);
+  write_key(db, 'last_processed_online_users_timestamp', last_processed_online.length == 0);
 }
 
 function get_hourly_stats() {
@@ -219,7 +224,7 @@ function get_hourly_stats() {
     }
   }
 
-  write_key('last_processed_hourly_stats_timestamp', last_get_hourly_stats.length == 0);
+  write_key(db, 'last_processed_hourly_stats_timestamp', last_get_hourly_stats.length == 0);
 }
 
 function get_daily_stats() {
@@ -247,9 +252,7 @@ function get_daily_stats() {
 
   let last_date_str = new Date(last_date * 1000).toISOString().replace('T', ' ');
   let today_str = new Date(today * 1000).toISOString().replace('T', ' ');
-  console.log(last_date_str, today_str);
   let result = db.prepare("SELECT * from hourly_stats_reports where date >= ? and date < ? order by date").all(last_date_str.split(' ')[0], today_str.split(' ')[0]);
-  console.log(result);
   let stats = [];
   for (let i in result) {
     let hs = {
@@ -299,6 +302,22 @@ function get_daily_stats() {
   }
 }
 
+function init_db() {
+  db.prepare("delete from key_values").run();
+    
+  db.prepare("delete from online_users_reports").run();
+  
+  db.prepare("delete from hourly_stats_reports").run();
+  db.prepare("delete from total_stats_reports").run(); // TODO: stat locally
+  db.prepare("delete from clients").run();
+  db.prepare("delete from site_clients").run();
+  db.prepare("delete from weekly_clients").run();
+  db.prepare("delete from weekly_devices").run(); // TODO: device name
+  db.prepare("delete from weekly_sites_reports").run();
+  
+  db.prepare("delete from daily_stats_reports").run();
+}
+
 async function main() {
   let args = process.argv.slice(2)
   if (args.length >= 1 && args[0] == "set") {
@@ -307,27 +326,13 @@ async function main() {
   }
 
   if (args.length >= 1 && args[0] == "init") {
-    db.prepare("delete from key_values").run();
-    
-    db.prepare("delete from online_users_reports").run();
-    
-    db.prepare("delete from hourly_stats_reports").run();
-    db.prepare("delete from total_stats_reports").run(); // TODO: stat locally
-    db.prepare("delete from clients").run();
-    db.prepare("delete from site_clients").run();
-    db.prepare("delete from weekly_clients").run();
-    db.prepare("delete from weekly_devices").run(); // TODO: device name
-    db.prepare("delete from weekly_sites_reports").run();
-    
-    // TODO:
-    db.prepare("delete from daily_stats_reports").run();
-    
+    init_db();    
     return;
   }
 
-  //update_online_users();
+  update_online_users();
 
-  //get_hourly_stats();
+  get_hourly_stats();
 
   get_daily_stats();
 }

@@ -1,4 +1,4 @@
-function write_key(key, update) {
+function write_key(db, key, update) {
   let now_str = get_date_str();
   if (update) {
     let stmt = db.prepare("INSERT INTO key_values(key, value_type, datetime_value, created_at, updated_at) VALUES(?, 2, ?, ?, ?)");
