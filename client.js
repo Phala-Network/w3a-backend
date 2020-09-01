@@ -1,8 +1,8 @@
 const sqlite = require('better-sqlite3');
-const request = require("sync-request");
+const { send_request } = require('./send_request');
+const { write_key, get_date_str, get_seconds_from_date_str, get_first_day_of_week } = require('./utils');
 
 const db = new sqlite("../db/development.sqlite3");
-const pRuntime_host = "http://localhost:8000";
 
 function set_page_views() {
   const last_read = db.prepare("SELECT * from key_values where key = 'last_read_page_views'").all();
@@ -127,7 +127,7 @@ function get_hourly_stats() {
   }
 
   let plain = JSON.parse(response.payload).Plain;
-  let hourly_stat = JSON.parse(plain).GetHourlyStat.hourly_stat;
+  let hourly_stat = JSON.parse(plain).GetHourlyStats.hourly_stat;
   console.log('hourly_stat:', JSON.stringify(hourly_stat));
   
   let hourly_page_views = hourly_stat.hpv;
@@ -222,77 +222,82 @@ function get_hourly_stats() {
   write_key('last_processed_hourly_stats_timestamp', last_get_hourly_stats.length == 0);
 }
 
-function send_request(request_payload) {
-  let contract_id = 4;
-  let rand_num = Math.ceil(Math.random()*1000000);
-  
-  let query_body = {
-    "contract_id": contract_id,
-    "nonce": rand_num,
-    "request": request_payload
-  }
-  //console.log(query_body);
-
-  let query_payload = {
-    "Plain": JSON.stringify(query_body)
-  }
-
-  let query_data = {
-    "query_payload": JSON.stringify(query_payload)
-  }
-  
-  let json = {
-    "input": query_data,
-    "nonce": { "id":1 }
-  }
-  console.log("request:", JSON.stringify(json));
-
-  const res = request("POST", pRuntime_host + "/query",  {
-    json: json
-  });
-
-  console.log("response:", res.getBody('utf8'));
-
-  let response = JSON.parse(res.getBody('utf8'));
-
-  return response;
-}
-
-function write_key(key, update) {
-  let now_str = get_date_str();
-  if (update) {
-    let stmt = db.prepare("INSERT INTO key_values(key, value_type, datetime_value, created_at, updated_at) VALUES(?, 2, ?, ?, ?)");
-    stmt.run(key, now_str.substr(0, 17) + '00', now_str, now_str);
+function get_daily_stats() {
+  const last_get_daily_stats = db.prepare("SELECT * from daily_stats_reports order by date desc").all();
+  let last_date
+  if (last_get_daily_stats.length == 0) {
+    let hourly_stats = db.prepare("SELECT * FROM hourly_stats_reports order by date").all();
+    if (hourly_stats.length > 0) {
+      last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
+    }
   } else {
-    let stmt = db.prepare("UPDATE key_values set datetime_value = ?, updated_at = ? where key = ?");
-    stmt.run(now_str.substr(0, 17) + '00', now_str, key);
+    last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000 + 24 * 3600;
+  }
+  
+  if (last_date == undefined) {
+    console.log('last_datetime == undefined');
+    return;
+  }
+
+  let today = Math.floor(new Date().getTime() / 1000 / 24 / 3600) * 24 * 3600;
+  if (today <= last_date) {
+    console.log("too quick request");
+    return;
+  }
+
+  let last_date_str = new Date(last_date * 1000).toISOString().replace('T', ' ');
+  let today_str = new Date(today * 1000).toISOString().replace('T', ' ');
+  console.log(last_date_str, today_str);
+  let result = db.prepare("SELECT * from hourly_stats_reports where date >= ? and date < ? order by date").all(last_date_str.split(' ')[0], today_str.split(' ')[0]);
+  console.log(result);
+  let stats = [];
+  for (let i in result) {
+    let hs = {
+      "sid" : result[i].site_id.toString(),
+      "pv_count": parseInt(result[i].pv_count),
+      "cid_count": parseInt(result[i].clients_count),
+      "avg_duration": parseInt(result[i].avg_duration_in_seconds),
+      "timestamp": new Date(result[i].date + 'Z').getTime() / 1000,
+    };
+
+    stats.push(hs);
+  }
+
+  let payload = {
+    "daily_stat": {"stats": stats}
+  }
+  console.log(payload);
+
+  let response = send_request({"GetDailyStats": payload});
+  if (response.status != "ok") {
+    console.log("response error");
+    return;
+  }
+
+  console.log(response);
+  if (response.status != "ok") {
+    console.log("response error");
+    return;
+  }
+
+  let plain = JSON.parse(response.payload).Plain;
+  let daily_stat = JSON.parse(plain).GetDailyStats.daily_stat;
+  console.log('daily_stat:', JSON.stringify(daily_stat));
+  stats = daily_stat.stats;
+  for (let i in stats) {
+    let stat = stats[i];
+    let d = get_date_str(stat.timestamp * 1000).split(' ')[0];
+    let now_str = get_date_str();
+    let result = db.prepare("SELECT * from daily_stats_reports where site_id = ? and date = ?").all(stat.sid, d);
+    if (result.length == 0) {
+      let stmt = db.prepare("INSERT INTO daily_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(stat.sid, stat.pv_count, stat.cid_count, stat.avg_duration, d, now_str, now_str);
+    } else {
+      let stmt = db.prepare("UPDATE daily_stats_reports set pv_count = ?, clients_count = ?, avg_duration_in_seconds = ?, updated_at = ?");
+      stmt.run(stat.pv_count, stat.cid_count, stat.avg_duration, now_str);
+    }
   }
 }
-
-function get_date_str(timestamp) {
-  if (timestamp == undefined) 
-    return new Date().toISOString().replace('T', ' ').replace('Z', '');
-  else
-    return new Date(timestamp).toISOString().replace('T', ' ').replace('Z', '');
-}
-
-function get_seconds_from_date_str(date_str) {
-  if (date_str == undefined)
-    return Math.floor(new Date().getTime() / 60000) * 60;
-
-  return Math.floor(new Date(date_str + 'Z').getTime() / 60000) * 60;
-}
-
-function get_first_day_of_week(date, from_monday) {
-  let day_of_week = date.getDay();
-  let first_day_of_week = new Date(date);
-  let diff = day_of_week >= from_monday ? day_of_week - from_monday : 6 - day_of_week;
-  first_day_of_week.setDate(date.getDate() - diff);
-  first_day_of_week.setHours(0,0,0,0);
-
-  return first_day_of_week.getTime() / 1000;
-}
-
 
 async function main() {
   let args = process.argv.slice(2)
@@ -315,14 +320,16 @@ async function main() {
     db.prepare("delete from weekly_sites_reports").run();
     
     // TODO:
-    // db.prepare("delete from daily_stats_reports").run();
+    db.prepare("delete from daily_stats_reports").run();
     
     return;
   }
 
   //update_online_users();
 
-  get_hourly_stats();
+  //get_hourly_stats();
+
+  get_daily_stats();
 }
 
 main().catch(console.error).finally(() => process.exit());
