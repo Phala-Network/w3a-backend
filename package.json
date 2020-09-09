@@ -10,6 +10,8 @@
   "license": "ISC",
   "dependencies": {
     "better-sqlite3": "^7.1.0",
+    "crypto": "^1.0.1",
+    "node-aes-gcm": "^0.2.5",
     "sync-request": "^6.1.0"
   }
 }

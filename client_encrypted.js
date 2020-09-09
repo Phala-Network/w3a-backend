@@ -8,6 +8,7 @@ const db = new sqlite("../db/development.sqlite3");
 const SET_PAGE_VIEW_KEY = "last_set_page_views";
 const ONLINE_USER_KEY = "last_processed_online_users_timestamp";
 const HOURLY_STAT_KEY = "last_processed_hourly_stats_timestamp";
+const ENCRYPTED = true;
 
 function set_page_views() {
   const last_read = db.prepare("SELECT * from key_values where key = ?").all(SET_PAGE_VIEW_KEY);
@@ -45,7 +46,8 @@ function set_page_views() {
   }
 
   let payload = {
-    "page_views": rows
+    "page_views": rows,
+    "encrypted": ENCRYPTED,
   };
 
   let response = send_request({"SetPageView": payload});
@@ -160,38 +162,47 @@ function get_hourly_stats() {
   }
 
   let plain = JSON.parse(response.payload).Plain;
+  let encrypted = JSON.parse(plain).GetHourlyStats.encrypted;
   let hourly_stat = JSON.parse(plain).GetHourlyStats.hourly_stat;
   console.log('hourly_stat:', JSON.stringify(hourly_stat));
   
-  process_hourly_stats(hourly_stat.hourly_page_views);
+  process_hourly_stats(hourly_stat.hourly_page_views, encrypted);
 
   process_site_clients(hourly_stat.site_clients);
 
   process_weekly_clients(hourly_stat.weekly_clients);
 
-  process_weekly_sites(hourly_stat.weekly_sites);
+  process_weekly_sites(hourly_stat.weekly_sites, encrypted);
 
-  process_weekly_devices(hourly_stat.weekly_devices);
+  process_weekly_devices(hourly_stat.weekly_devices, encrypted);
 
   write_key(db, HOURLY_STAT_KEY, last_get_hourly_stats.length == 0);
 }
 
-function process_hourly_stats(hourly_page_views) {
+function process_hourly_stats(hourly_page_views, encrypted) {
   for (let i in hourly_page_views) {
     let hs = hourly_page_views[i];
     let d = get_datetime_str(hs.timestamp * 1000).substring(0, 19);
     let now_str = get_datetime_str();
-    let stmt = db.prepare("INSERT INTO hourly_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
-    stmt.run(hs.sid, hs.pv_count, hs.cid_count, hs.avg_duration, d, get_date_str(d), now_str, now_str);
-
-    let count = 0;
-    let result = db.prepare("SELECT * from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
-    if (result.length > 0) {
-      count = result[0].pv_count;
+    if (encrypted) {
+      let stmt = db.prepare("INSERT INTO hourly_stats_reports_enc(site_id, pv_count, clients_count, avg_duration_in_seconds, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(hs.sid, hs.pv_count, hs.cid_count, hs.avg_duration, d, get_date_str(d), now_str, now_str);
+    } else {
+      let stmt = db.prepare("INSERT INTO hourly_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(hs.sid, hs.pv_count, hs.cid_count, hs.avg_duration, d, get_date_str(d), now_str, now_str);
     }
 
-    stmt = db.prepare("INSERT INTO total_stats_reports(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
-    stmt.run(hs.sid, hs.cid_count, hs.pv_count + count, hs.avg_duration / 2, d, now_str, now_str);
+    //TODO:
+    if (!encrypted) {
+      let count = 0;
+      let result = db.prepare("SELECT * from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
+      if (result.length > 0) {
+        count = result[0].pv_count;
+      }
+
+      stmt = db.prepare("INSERT INTO total_stats_reports(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(hs.sid, hs.cid_count, hs.pv_count + count, hs.avg_duration / 2, d, now_str, now_str);
+    }
   }
 }
 
@@ -234,39 +245,205 @@ function process_weekly_clients(weekly_clients) {
   }
 }
 
-function process_weekly_sites(weekly_sites) {
+function process_weekly_sites(weekly_sites, encrypted) {
+  if (!encrypted) {
+    for (let i in weekly_sites) {
+      let ws = weekly_sites[i];
+      let count = ws.count;
+      let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
+      let now_str = get_datetime_str();
+  
+      let result = db.prepare("SELECT * from weekly_sites_reports where site_id = ? and path = ? and date = ?").all(ws.sid, ws.path, d);
+      if (result.length > 0) {
+        let last_count = result[0].count;
+        db.prepare("UPDATE weekly_sites_reports set count = ? where site_id = ? and path = ? and date = ?").run(last_count + count, ws.sid, ws.path, d);
+      } else {
+        let stmt = db.prepare("INSERT INTO weekly_sites_reports(site_id, path, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+        stmt.run(ws.sid, ws.path, count, d, now_str, now_str);
+      }
+    }
+
+    return;
+  }
+
+  let map = new Map()
   for (let i in weekly_sites) {
     let ws = weekly_sites[i];
-    let count = ws.count;
+    let sid = ws.sid;
+    let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
+    let key = sid+ '|' + d;
+    if (!map.has(key)) {
+      let result = db.prepare("SELECT count, path, site_id as sid, date as timestamp from weekly_sites_reports_enc where site_id = ? and date = ?").all(sid, d);
+      map.set(key, result);
+    }
+  }
+
+  let wss_new = [];
+  for (let i in weekly_sites) {
+    let ws = weekly_sites[i];
+    let sid = ws.sid;
+    let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
+    let key = sid + '|' + d;
+    if (map.has(key) && map.get(key).length == 0) { // no data in db
+      let now_str = get_datetime_str();
+      let stmt = db.prepare("INSERT INTO weekly_sites_reports_enc(site_id, path, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+      stmt.run(sid, ws.path, ws.count, d, now_str, now_str);
+    } else if (map.has(key) && map.get(key).length > 0) {
+      wss_new.push(ws);
+    }
+  }
+
+  if (wss_new.length == 0) {
+    console.log("no new weekly sites");
+    return;
+  }
+
+  let wss_in_db = []
+  for (let key of map.keys()) {
+    let value = map.get(key);
+    for (let i in value) {
+      wss_in_db.push({
+        "count": value[i].count.toString(),
+        "path": value[i].path,
+        "sid":  value[i].sid.toString(),
+        "timestamp": get_seconds_from_date_str(value[i].timestamp)
+      });
+    }
+  }
+
+  let payload = {
+    "weekly_sites_in_db": wss_in_db,
+    "weekly_sites_new": wss_new,
+  }
+  //console.log('payload:', payload);
+
+  let response = send_request({"GetWeeklySites": payload});
+  if (response.status != "ok") {
+    console.log("response error");
+    return;
+  }
+
+  let plain = JSON.parse(response.payload).Plain;
+  let merged_wss = JSON.parse(plain).GetWeeklySites.weekly_sites;
+  console.log('merged_wss:', JSON.stringify(merged_wss));
+  
+  let keys = []
+  for (let i in merged_wss) {
+    let ws = merged_wss[i];
+    let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
+    if (!keys.includes(ws.sid + '|' + d)) {
+      db.prepare("DELETE FROM weekly_sites_reports_enc where site_id = ? and date = ?").run(ws.sid, d);
+      keys.push(ws.sid + '|' + d);
+    }
+  }
+
+  for (let i in merged_wss) {
+    let ws = merged_wss[i];
     let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
     let now_str = get_datetime_str();
-
-    let result = db.prepare("SELECT * from weekly_sites_reports where site_id = ? and path = ? and date = ?").all(ws.sid, ws.path, d);
-    if (result.length > 0) {
-      let last_count = result[0].count;
-      db.prepare("UPDATE weekly_sites_reports set count = ? where site_id = ? and path = ? and date = ?").run(last_count + count, ws.sid, ws.path, d);
-    } else {
-      let stmt = db.prepare("INSERT INTO weekly_sites_reports(site_id, path, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
-      stmt.run(ws.sid, ws.path, count, d, now_str, now_str);
-    }
+    let stmt = db.prepare("INSERT INTO weekly_sites_reports_enc(site_id, path, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+    stmt.run(ws.sid, ws.path, ws.count, d, now_str, now_str);
   }
 }
 
-function process_weekly_devices(weekly_devices) {
+function process_weekly_devices(weekly_devices, encrypted) {
+  if (!encrypted) {
+    for (let i in weekly_devices) {
+      let wd = weekly_devices[i];
+      let count = wd.count;
+      let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
+      let now_str = get_datetime_str();
+
+      let result = db.prepare("SELECT * from weekly_devices where site_id = ? and device = ? and date = ?").all(wd.sid, wd.device, d);
+      if (result.length > 0) {
+        let last_count = result[0].count;
+        db.prepare("UPDATE weekly_devices set count = ? where site_id = ? and device = ? and date = ?").run(last_count + count, wd.sid, wd.device, d);
+      } else {
+        let stmt = db.prepare("INSERT INTO weekly_devices(site_id, device, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+        stmt.run(wd.sid, wd.device, count, d, now_str, now_str);
+      }
+    }
+
+    return;
+  }
+
+  let map = new Map()
   for (let i in weekly_devices) {
     let wd = weekly_devices[i];
-    let count = wd.count;
+    let sid = wd.sid;
+    let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
+    let key = sid+ '|' + d;
+    if (!map.has(key)) {
+      let result = db.prepare("SELECT count, device, site_id as sid, date as timestamp from weekly_devices_enc where site_id = ? and date = ?").all(sid, d);
+      map.set(key, result);
+    }
+  }
+
+  let wds_new = [];
+  for (let i in weekly_devices) {
+    let wd = weekly_devices[i];
+    let sid = wd.sid;
+    let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
+    let key = sid + '|' + d;
+    if (map.has(key) && map.get(key).length == 0) { // no data in db
+      let now_str = get_datetime_str();
+      let stmt = db.prepare("INSERT INTO weekly_devices_enc(site_id, device, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+      stmt.run(sid, wd.device, wd.count, d, now_str, now_str);
+    } else if (map.has(key) && map.get(key).length > 0) {
+      wds_new.push(wd);
+    }
+  }
+
+  if (wds_new.length == 0) {
+    console.log("no new weekly devices");
+    return;
+  }
+
+  let wds_in_db = []
+  for (let key of map.keys()) {
+    let value = map.get(key);
+    for (let i in value) {
+      wds_in_db.push({
+        "count": value[i].count.toString(),
+        "device": value[i].device,
+        "sid":  value[i].sid.toString(),
+        "timestamp": get_seconds_from_date_str(value[i].timestamp)
+      });
+    }
+  }
+
+  let payload = {
+    "weekly_devices_in_db": wds_in_db,
+    "weekly_devices_new": wds_new,
+  }
+  //console.log('payload:', payload);
+
+  let response = send_request({"GetWeeklyDevices": payload});
+  if (response.status != "ok") {
+    console.log("response error");
+    return;
+  }
+
+  let plain = JSON.parse(response.payload).Plain;
+  let merged_wds = JSON.parse(plain).GetWeeklyDevices.weekly_devices;
+  console.log('merged_wds:', JSON.stringify(merged_wds));
+  
+  let keys = []
+  for (let i in merged_wds) {
+    let wd = merged_wds[i];
+    let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
+    if (!keys.includes(wd.sid + '|' + d)) {
+      db.prepare("DELETE FROM weekly_devices_enc where site_id = ? and date = ?").run(wd.sid, d);
+      keys.push(wd.sid + '|' + d);
+    }
+  }
+
+  for (let i in merged_wds) {
+    let wd = merged_wds[i];
     let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
     let now_str = get_datetime_str();
-
-    let result = db.prepare("SELECT * from weekly_devices where site_id = ? and device = ? and date = ?").all(wd.sid, wd.device, d);
-    if (result.length > 0) {
-      let last_count = result[0].count;
-      db.prepare("UPDATE weekly_devices set count = ? where site_id = ? and device = ? and date = ?").run(last_count + count, wd.sid, wd.device, d);
-    } else {
-      let stmt = db.prepare("INSERT INTO weekly_devices(site_id, device, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
-      stmt.run(wd.sid, wd.device, count, d, now_str, now_str);
-    }
+    let stmt = db.prepare("INSERT INTO weekly_devices_enc(site_id, device, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
+    stmt.run(wd.sid, wd.device, wd.count, d, now_str, now_str);
   }
 }
 
@@ -283,7 +460,7 @@ function get_daily_stats() {
   }
   
   if (last_date == undefined) {
-    console.log('last_datetime == undefined');
+    console.log('last_date == undefined');
     return;
   }
 
@@ -324,19 +501,26 @@ function get_daily_stats() {
   let daily_stat = JSON.parse(plain).GetDailyStats.daily_stat;
   console.log('daily_stat:', JSON.stringify(daily_stat));
   stats = daily_stat.stats;
-  for (let i in stats) {
-    let stat = stats[i];
-    let d = get_date_str(get_datetime_str(stat.timestamp * 1000));
-    let now_str = get_datetime_str();
-    let result = db.prepare("SELECT * from daily_stats_reports where site_id = ? and date = ?").all(stat.sid, d);
-    if (result.length == 0) {
-      let stmt = db.prepare("INSERT INTO daily_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
-      stmt.run(stat.sid, stat.pv_count, stat.cid_count, stat.avg_duration, d, now_str, now_str);
-    } else {
-      let stmt = db.prepare("UPDATE daily_stats_reports set pv_count = ?, clients_count = ?, avg_duration_in_seconds = ?, updated_at = ?");
-      stmt.run(stat.pv_count, stat.cid_count, stat.avg_duration, now_str);
+  let encrypted = JSON.parse(plain).GetDailyStats.encrypted;
+  if (!encrypted) {
+    for (let i in stats) {
+      let stat = stats[i];
+      let d = get_date_str(get_datetime_str(stat.timestamp * 1000));
+      let now_str = get_datetime_str();
+      let result = db.prepare("SELECT * from daily_stats_reports where site_id = ? and date = ?").all(stat.sid, d);
+      if (result.length == 0) {
+        let stmt = db.prepare("INSERT INTO daily_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+        stmt.run(stat.sid, stat.pv_count, stat.cid_count, stat.avg_duration, d, now_str, now_str);
+      } else {
+        let stmt = db.prepare("UPDATE daily_stats_reports set pv_count = ?, clients_count = ?, avg_duration_in_seconds = ?, updated_at = ?");
+        stmt.run(stat.pv_count, stat.cid_count, stat.avg_duration, now_str);
+      }
     }
+
+    return;
   }
+
+  //TODO:
 }
 
 function init_db() {
@@ -383,8 +567,6 @@ async function main() {
 
     if (ret)
       update_online_users();
-
-    //break;
 
     if (new Date().getHours() != hour) {
       hour = new Date().getHours();

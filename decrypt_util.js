@@ -25,8 +25,8 @@ function main() {
   let cipher_data = cipher_hex.slice(0, -32);
 
   let plain = aead.decrypt(Buffer.from(key, 'hex'), iv, Buffer.from(cipher_data, 'hex'), Buffer.from(auth_tag, 'hex'));
-  console.log(plain.auth_ok);
-  console.log(plain.plaintext.toString('utf8'));
+  console.log("auth_ok:", plain.auth_ok);
+  console.log("plain_text:", plain.plaintext.toString('utf8'));
 }
 
 main()
