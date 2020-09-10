@@ -166,7 +166,7 @@ function get_hourly_stats() {
   let hourly_stat = JSON.parse(plain).GetHourlyStats.hourly_stat;
   console.log('hourly_stat:', JSON.stringify(hourly_stat));
   
-  process_hourly_stats(hourly_stat.hourly_page_views, encrypted);
+  process_hourly_stats(hourly_stat.hourly_page_view_stats, encrypted);
 
   process_site_clients(hourly_stat.site_clients);
 
@@ -179,9 +179,9 @@ function get_hourly_stats() {
   write_key(db, HOURLY_STAT_KEY, last_get_hourly_stats.length == 0);
 }
 
-function process_hourly_stats(hourly_page_views, encrypted) {
-  for (let i in hourly_page_views) {
-    let hs = hourly_page_views[i];
+function process_hourly_stats(hourly_page_view_stats, encrypted) {
+  for (let i in hourly_page_view_stats) {
+    let hs = hourly_page_view_stats[i];
     let d = get_datetime_str(hs.timestamp * 1000).substring(0, 19);
     let now_str = get_datetime_str();
     if (encrypted) {
@@ -192,16 +192,49 @@ function process_hourly_stats(hourly_page_views, encrypted) {
       stmt.run(hs.sid, hs.pv_count, hs.cid_count, hs.avg_duration, d, get_date_str(d), now_str, now_str);
     }
 
-    //TODO:
+    //total stats
     if (!encrypted) {
       let count = 0;
-      let result = db.prepare("SELECT * from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
+      let result = db.prepare("SELECT pv_count from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
       if (result.length > 0) {
-        count = result[0].pv_count;
+        count = parseInt(result[0].pv_count);
       }
 
       stmt = db.prepare("INSERT INTO total_stats_reports(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
-      stmt.run(hs.sid, hs.cid_count, hs.pv_count + count, hs.avg_duration / 2, d, now_str, now_str);
+      stmt.run(hs.sid, hs.cid_count, parseInt(hs.pv_count) + count, parseInt(hs.avg_duration) / 2, d, now_str, now_str);
+    } else {
+      let count = "";
+      let result = db.prepare("SELECT id, pv_count from total_stats_reports_enc where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
+      if (result.length > 0) {
+        count = result[0].pv_count; //return only one record
+      }
+
+      let payload = {
+        "count": count,
+        "total_stat": hs,
+      };
+
+      let response = send_request({"GetTotalStat": payload});
+      if (response.status != "ok") {
+        console.log("response error");
+        return;
+      }
+
+      let plain = JSON.parse(response.payload).Plain;
+      if (!JSON.parse(plain).GetTotalStat.encrypted) {
+        console.log("error");
+        continue;
+      }
+
+      if (result.length > 0) {
+        db.prepare("DELETE from total_stats_reports_enc where id = ?").run(result[0].id);
+      }
+
+      let total_stat = JSON.parse(plain).GetTotalStat.total_stat;
+      now_str = get_datetime_str();
+      stmt = db.prepare("INSERT INTO total_stats_reports_enc(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(total_stat.sid, total_stat.cid_count, total_stat.pv_count, total_stat.avg_duration, d, now_str, now_str);
+      
     }
   }
 }
@@ -447,20 +480,32 @@ function process_weekly_devices(weekly_devices, encrypted) {
   }
 }
 
-function get_daily_stats() {
-  const last_get_daily_stats = db.prepare("SELECT * from daily_stats_reports order by date desc").all();
+function get_daily_stats(encrypted) {
   let last_date
-  if (last_get_daily_stats.length == 0) {
-    let hourly_stats = db.prepare("SELECT * FROM hourly_stats_reports order by date").all();
-    if (hourly_stats.length > 0) {
-      last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
+  if (!encrypted) {
+    const last_get_daily_stats = db.prepare("SELECT date from daily_stats_reports order by date desc").all();
+    if (last_get_daily_stats.length == 0) {
+      let hourly_stats = db.prepare("SELECT date FROM hourly_stats_reports order by date").all();
+      if (hourly_stats.length > 0) {
+        last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
+      }
+    } else {
+      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000 + 24 * 3600;
     }
   } else {
-    last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000 + 24 * 3600;
+    const last_get_daily_stats = db.prepare("SELECT date from daily_stats_reports_enc order by date desc").all();
+    if (last_get_daily_stats.length == 0) {
+      let hourly_stats = db.prepare("SELECT date FROM hourly_stats_reports_enc order by date").all();
+      if (hourly_stats.length > 0) {
+        last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
+      }
+    } else {
+      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000 + 24 * 3600;
+    }
   }
   
   if (last_date == undefined) {
-    console.log('last_date == undefined');
+    console.log('get_daily_stats: last_date == undefined');
     return;
   }
 
@@ -472,7 +517,9 @@ function get_daily_stats() {
 
   let last_date_str = get_datetime_str(last_date * 1000);
   let today_str = get_datetime_str(today * 1000);
-  let result = db.prepare("SELECT * from hourly_stats_reports where date >= ? and date < ? order by date").all(get_date_str(last_date_str), get_date_str(today_str));
+  let sql = encrypted ? "SELECT * from hourly_stats_reports_enc where date >= ? and date < ? order by date" : 
+                        "SELECT * from hourly_stats_reports where date >= ? and date < ? order by date";
+  let result = db.prepare(sql).all(get_date_str(last_date_str), get_date_str(today_str));
   let stats = [];
   for (let i in result) {
     let hs = {
@@ -501,7 +548,11 @@ function get_daily_stats() {
   let daily_stat = JSON.parse(plain).GetDailyStats.daily_stat;
   console.log('daily_stat:', JSON.stringify(daily_stat));
   stats = daily_stat.stats;
-  let encrypted = JSON.parse(plain).GetDailyStats.encrypted;
+  if (encrypted != JSON.parse(plain).GetDailyStats.encrypted) {
+    console.log("error");
+    return;
+  }
+
   if (!encrypted) {
     for (let i in stats) {
       let stat = stats[i];
@@ -512,15 +563,27 @@ function get_daily_stats() {
         let stmt = db.prepare("INSERT INTO daily_stats_reports(site_id, pv_count, clients_count, avg_duration_in_seconds, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
         stmt.run(stat.sid, stat.pv_count, stat.cid_count, stat.avg_duration, d, now_str, now_str);
       } else {
-        let stmt = db.prepare("UPDATE daily_stats_reports set pv_count = ?, clients_count = ?, avg_duration_in_seconds = ?, updated_at = ?");
-        stmt.run(stat.pv_count, stat.cid_count, stat.avg_duration, now_str);
+        let stmt = db.prepare("UPDATE daily_stats_reports set pv_count = ?, clients_count = ?, avg_duration_in_seconds = ?, updated_at = ? where site_id = ? and date = ?");
+        stmt.run(stat.pv_count, stat.cid_count, stat.avg_duration, now_str, stat.sid, d);
       }
     }
 
     return;
   }
 
-  //TODO:
+  for (let i in stats) {
+    let stat = stats[i];
+    let d = get_date_str(get_datetime_str(stat.timestamp * 1000));
+    let now_str = get_datetime_str();
+    let result = db.prepare("SELECT * from daily_stats_reports_enc where site_id = ? and date = ?").all(stat.sid, d);
+    if (result.length == 0) {
+      let stmt = db.prepare("INSERT INTO daily_stats_reports_enc(site_id, pv_count, clients_count, avg_duration_in_seconds, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+      stmt.run(stat.sid, stat.pv_count, stat.cid_count, stat.avg_duration, d, now_str, now_str);
+    } else {
+      let stmt = db.prepare("UPDATE daily_stats_reports_enc set pv_count = ?, clients_count = ?, avg_duration_in_seconds = ?, updated_at = ? where site_id = ? and date = ?");
+      stmt.run(stat.pv_count, stat.cid_count, stat.avg_duration, now_str, stat.sid, d);
+    }
+  }
 }
 
 function init_db() {
@@ -532,7 +595,8 @@ function init_db() {
   db.prepare("delete from hourly_stats_reports").run();
   db.prepare("delete from hourly_stats_reports_enc").run();
 
-  db.prepare("delete from total_stats_reports").run(); // TODO: stat locally
+  db.prepare("delete from total_stats_reports").run();
+  db.prepare("delete from total_stats_reports_enc").run();
 
   db.prepare("delete from clients").run();
   db.prepare("delete from site_clients").run();
@@ -575,7 +639,7 @@ async function main() {
 
     if (new Date().getDay() != day) {
       day = new Date().getDay();
-      get_daily_stats();
+      get_daily_stats(ENCRYPTED);
     }
 
     console.log(`[${new Date().toLocaleString()}] wait for ${interval} seconds ...\n`);
