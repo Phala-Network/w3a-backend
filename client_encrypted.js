@@ -192,50 +192,54 @@ function process_hourly_stats(hourly_page_view_stats, encrypted) {
       stmt.run(hs.sid, hs.pv_count, hs.cid_count, hs.avg_duration, d, get_date_str(d), now_str, now_str);
     }
 
-    //total stats
-    if (!encrypted) {
-      let count = 0;
-      let result = db.prepare("SELECT pv_count from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
-      if (result.length > 0) {
-        count = parseInt(result[0].pv_count);
-      }
+    process_total_stat(hs, encrypted);
+  }
+}
 
-      stmt = db.prepare("INSERT INTO total_stats_reports(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
-      stmt.run(hs.sid, hs.cid_count, parseInt(hs.pv_count) + count, parseInt(hs.avg_duration) / 2, d, now_str, now_str);
-    } else {
-      let count = "";
-      let result = db.prepare("SELECT id, pv_count from total_stats_reports_enc where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
-      if (result.length > 0) {
-        count = result[0].pv_count; //return only one record
-      }
-
-      let payload = {
-        "count": count,
-        "total_stat": hs,
-      };
-
-      let response = send_request({"GetTotalStat": payload});
-      if (response.status != "ok") {
-        console.log("response error");
-        return;
-      }
-
-      let plain = JSON.parse(response.payload).Plain;
-      if (!JSON.parse(plain).GetTotalStat.encrypted) {
-        console.log("error");
-        continue;
-      }
-
-      if (result.length > 0) {
-        db.prepare("DELETE from total_stats_reports_enc where id = ?").run(result[0].id);
-      }
-
-      let total_stat = JSON.parse(plain).GetTotalStat.total_stat;
-      now_str = get_datetime_str();
-      stmt = db.prepare("INSERT INTO total_stats_reports_enc(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
-      stmt.run(total_stat.sid, total_stat.cid_count, total_stat.pv_count, total_stat.avg_duration, d, now_str, now_str);
-      
+function process_total_stat(hs, encrypted) {
+  let d = get_datetime_str(hs.timestamp * 1000).substring(0, 19);
+  if (!encrypted) {
+    let count = 0;
+    let result = db.prepare("SELECT pv_count from total_stats_reports where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
+    if (result.length > 0) {
+      count = parseInt(result[0].pv_count);
     }
+
+    let now_str = get_datetime_str();
+    let stmt = db.prepare("INSERT INTO total_stats_reports(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+    stmt.run(hs.sid, hs.cid_count, parseInt(hs.pv_count) + count, parseInt(hs.avg_duration) / 2, d, now_str, now_str);
+  } else {
+    let count = "";
+    let result = db.prepare("SELECT id, pv_count from total_stats_reports_enc where site_id = ? and timestamp = ? order by created_at desc").all(hs.sid, d);
+    if (result.length > 0) {
+      count = result[0].pv_count; //return only one record
+    }
+
+    let payload = {
+      "count": count,
+      "total_stat": hs,
+    };
+
+    let response = send_request({"GetTotalStat": payload});
+    if (response.status != "ok") {
+      console.log("response error");
+      return;
+    }
+
+    let plain = JSON.parse(response.payload).Plain;
+    if (!JSON.parse(plain).GetTotalStat.encrypted) {
+      console.log("error");
+      return;
+    }
+
+    if (result.length > 0) {
+      db.prepare("DELETE from total_stats_reports_enc where id = ?").run(result[0].id);
+    }
+
+    let total_stat = JSON.parse(plain).GetTotalStat.total_stat;
+    let now_str = get_datetime_str();
+    let stmt = db.prepare("INSERT INTO total_stats_reports_enc(site_id, clients_count, pv_count, avg_duration_in_seconds, timestamp, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
+    stmt.run(total_stat.sid, total_stat.cid_count, total_stat.pv_count, total_stat.avg_duration, d, now_str, now_str);
   }
 }
 
