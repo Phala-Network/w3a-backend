@@ -1,11 +1,12 @@
-function write_key(db, key, update) {
+function write_key(db, key, update, last_time_in_sec) {
+  let last_time_str = get_minute_str(get_datetime_str(last_time_in_sec*1000));
   let now_str = get_datetime_str();
   if (update) {
     let stmt = db.prepare("INSERT INTO key_values(key, value_type, datetime_value, created_at, updated_at) VALUES(?, 2, ?, ?, ?)");
-    stmt.run(key, get_minute_str(now_str), now_str, now_str);
+    stmt.run(key, last_time_str, now_str, now_str);
   } else {
     let stmt = db.prepare("UPDATE key_values set datetime_value = ?, updated_at = ? where key = ?");
-    stmt.run(get_minute_str(now_str), now_str, key);
+    stmt.run(last_time_str, now_str, key);
   }
 }
 
@@ -42,4 +43,28 @@ function get_first_day_of_week(date, from_monday) {
   return first_day_of_week.getTime() / 1000;
 }
 
-module.exports = { write_key, get_datetime_str, get_minute_str, get_date_str, get_seconds_from_date_str, get_first_day_of_week }
+function init_db(db) {
+  db.prepare("delete from key_values").run();
+    
+  db.prepare("delete from online_users_reports").run();
+  db.prepare("delete from online_users_reports_enc").run();
+  
+  db.prepare("delete from hourly_stats_reports").run();
+  db.prepare("delete from hourly_stats_reports_enc").run();
+
+  db.prepare("delete from total_stats_reports").run();
+  db.prepare("delete from total_stats_reports_enc").run();
+
+  db.prepare("delete from clients").run();
+  db.prepare("delete from site_clients").run();
+  db.prepare("delete from weekly_clients").run();
+  db.prepare("delete from weekly_devices").run();
+  db.prepare("delete from weekly_devices_enc").run();
+  db.prepare("delete from weekly_sites_reports").run();
+  db.prepare("delete from weekly_sites_reports_enc").run();
+  
+  db.prepare("delete from daily_stats_reports").run();
+  db.prepare("delete from daily_stats_reports_enc").run();
+}
+
+module.exports = { write_key, get_datetime_str, get_minute_str, get_date_str, get_seconds_from_date_str, get_first_day_of_week, init_db }
