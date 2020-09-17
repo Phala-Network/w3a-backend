@@ -11,7 +11,7 @@ const { init_db } = require('./utils');
 const sleep = ms => new Promise( res => setTimeout(res, ms));
 const db = new sqlite("../db/development.sqlite3");
 
-const ENCRYPTED = false;
+const ENCRYPTED = true;
 
 async function main() {
   let args = process.argv.slice(2)
