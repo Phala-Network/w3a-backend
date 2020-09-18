@@ -1,0 +1,30 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1.0">
+    <title>W3A contract demo</title>
+  </head>
+  <body>
+    <h3>This is sub page two.</h3><br>
+    Click <a href='../index.html'>here</a> back to home page
+  </body>
+  <script src="https://cdn.staticfile.org/fingerprintjs2/2.1.0/fingerprint2.min.js"></script>
+  <script>
+  (function(t){
+    window.w3a=window.w3a||function(){
+      (window.w3a.q=window.w3a.q||[]).push(arguments)
+    };
+    o=document.createElement('script');
+    m=document.getElementsByTagName('script')[0];
+    o.async=1; o.src=t; o.id='w3a-script';
+    m.parentNode.insertBefore(o,m)
+  })("http://localhost:7000/tracker.js");
+  w3a('set', 'siteId', '1');
+  w3a('set', 'trackerUrl', "http://localhost:7000");
+  w3a('generateClientId');
+  setTimeout(function () {
+    w3a('trackPageview');
+  }, 500);
+  </script>
+</html>
