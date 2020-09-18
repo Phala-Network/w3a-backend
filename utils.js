@@ -33,14 +33,20 @@ function get_seconds_from_date_str(date_str) {
 }
 
 function get_first_day_of_week(date, from_monday) {
-  let zone = new Date().getTimezoneOffset() / 60;
   let day_of_week = date.getDay();
   let first_day_of_week = new Date(date);
   let diff = day_of_week >= from_monday ? day_of_week - from_monday : 6 - day_of_week;
   first_day_of_week.setDate(date.getDate() - diff);
-  first_day_of_week.setHours(0 - zone, 0, 0, 0);
+  let offset = new Date().getTimezoneOffset() / 60;
+  first_day_of_week.setHours(0 - offset, 0, 0, 0);
 
   return first_day_of_week.getTime() / 1000;
+}
+
+function get_day_of_month() {
+  let offset = new Date().getTimezoneOffset(); // in minutes
+  let d = new Date().getTime() + (0 - offset) * 60 * 1000;
+  return new Date(d).getDate();
 }
 
 function init_db(db) {
@@ -67,4 +73,4 @@ function init_db(db) {
   db.prepare("delete from daily_stats_reports_enc").run();
 }
 
-module.exports = { write_key, get_datetime_str, get_minute_str, get_date_str, get_seconds_from_date_str, get_first_day_of_week, init_db }
+module.exports = { write_key, get_datetime_str, get_minute_str, get_date_str, get_seconds_from_date_str, get_first_day_of_week, get_day_of_month, init_db }

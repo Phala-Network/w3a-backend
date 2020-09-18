@@ -41,16 +41,14 @@ function update_online_users(db, end) {
   let plain = JSON.parse(response.payload).Plain;
   let online_users = JSON.parse(plain).GetOnlineUsers.online_users;
   if (JSON.parse(plain).GetOnlineUsers.encrypted) {
-    for (let i in online_users) {
-      let ou = online_users[i];
+    for (let ou of online_users) {
       let d = get_datetime_str(ou.timestamp * 1000).substring(0, 19);
       let now_str = get_datetime_str();
       let stmt = db.prepare("INSERT INTO online_users_reports_enc(site_id, unique_cid_count, unique_ip_count, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");
       stmt.run(ou.sid, ou.cid_count, ou.ip_count, d, get_date_str(d), now_str, now_str);
     }
   } else {
-    for (let i in online_users) {
-      let ou = online_users[i];
+    for (let ou of online_users) {
       let d = get_datetime_str(ou.timestamp * 1000).substring(0, 19);
       let now_str = get_datetime_str();
       let stmt = db.prepare("INSERT INTO online_users_reports(site_id, unique_cid_count, unique_ip_count, timestamp, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?, ?)");

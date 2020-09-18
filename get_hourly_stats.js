@@ -60,8 +60,7 @@ function get_hourly_stats(db, end) {
 }
 
 function process_hourly_stats(db, hourly_page_view_stats, encrypted) {
-  for (let i in hourly_page_view_stats) {
-    let hs = hourly_page_view_stats[i];
+  for (let hs of hourly_page_view_stats) {
     let d = get_datetime_str(hs.timestamp * 1000).substring(0, 19);
     let now_str = get_datetime_str();
     if (encrypted) {
@@ -124,11 +123,9 @@ function process_total_stat(db, hs, encrypted) {
 }
 
 function process_site_clients(db, site_clients) {
-  for (let i in site_clients) {
-    let sc = site_clients[i];
+  for (let sc of site_clients) {
     let sid = sc.sid;
-    for (let j in sc.cids) {
-      let cid = sc.cids[j];
+    for (let cid of sc.cids) {
       let result = db.prepare("SELECT * from site_clients where site_id = ? and cid = ?").all(sid, cid);
       let now_str = get_datetime_str();
       if (result.length == 0) {
@@ -146,12 +143,10 @@ function process_site_clients(db, site_clients) {
 }
 
 function process_weekly_clients(db, weekly_clients) {
-  for (let i in weekly_clients) {
-    let wc = weekly_clients[i];
+  for (let wc of weekly_clients) {
     let sid = wc.sid;
     let date_str = get_date_str(get_datetime_str(wc.timestamp * 1000));
-    for (let j in wc.cids) {
-      let cid = wc.cids[j];
+    for (let cid of wc.cids) {
       let result = db.prepare("SELECT * from weekly_clients where site_id = ? and cid = ? and date = ?").all(sid, cid, date_str);
       let now_str = get_datetime_str();
       if (result.length == 0) {
@@ -164,8 +159,7 @@ function process_weekly_clients(db, weekly_clients) {
 
 function process_weekly_sites(db, weekly_sites, encrypted) {
   if (!encrypted) {
-    for (let i in weekly_sites) {
-      let ws = weekly_sites[i];
+    for (let ws of weekly_sites) {
       let count = ws.count;
       let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
       let now_str = get_datetime_str();
@@ -184,8 +178,7 @@ function process_weekly_sites(db, weekly_sites, encrypted) {
   }
 
   let map = new Map()
-  for (let i in weekly_sites) {
-    let ws = weekly_sites[i];
+  for (let ws of weekly_sites) {
     let sid = ws.sid;
     let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
     let key = sid+ '|' + d;
@@ -196,8 +189,7 @@ function process_weekly_sites(db, weekly_sites, encrypted) {
   }
 
   let wss_new = [];
-  for (let i in weekly_sites) {
-    let ws = weekly_sites[i];
+  for (let ws of weekly_sites) {
     let sid = ws.sid;
     let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
     let key = sid + '|' + d;
@@ -218,12 +210,12 @@ function process_weekly_sites(db, weekly_sites, encrypted) {
   let wss_in_db = []
   for (let key of map.keys()) {
     let value = map.get(key);
-    for (let i in value) {
+    for (let v of value) {
       wss_in_db.push({
-        "count": value[i].count.toString(),
-        "path": value[i].path,
-        "sid":  value[i].sid.toString(),
-        "timestamp": get_seconds_from_date_str(value[i].timestamp)
+        "count": v.count.toString(),
+        "path": v.path,
+        "sid":  v.sid.toString(),
+        "timestamp": get_seconds_from_date_str(v.timestamp)
       });
     }
   }
@@ -242,8 +234,7 @@ function process_weekly_sites(db, weekly_sites, encrypted) {
   let plain = JSON.parse(response.payload).Plain;
   let merged_wss = JSON.parse(plain).GetWeeklySites.weekly_sites;
   let keys = []
-  for (let i in merged_wss) {
-    let ws = merged_wss[i];
+  for (let ws of merged_wss) {
     let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
     if (!keys.includes(ws.sid + '|' + d)) {
       db.prepare("DELETE FROM weekly_sites_reports_enc where site_id = ? and date = ?").run(ws.sid, d);
@@ -251,8 +242,7 @@ function process_weekly_sites(db, weekly_sites, encrypted) {
     }
   }
 
-  for (let i in merged_wss) {
-    let ws = merged_wss[i];
+  for (let ws of merged_wss) {
     let d = get_date_str(get_datetime_str(ws.timestamp * 1000));
     let now_str = get_datetime_str();
     let stmt = db.prepare("INSERT INTO weekly_sites_reports_enc(site_id, path, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");
@@ -262,8 +252,7 @@ function process_weekly_sites(db, weekly_sites, encrypted) {
 
 function process_weekly_devices(db, weekly_devices, encrypted) {
   if (!encrypted) {
-    for (let i in weekly_devices) {
-      let wd = weekly_devices[i];
+    for (let wd of weekly_devices) {
       let count = wd.count;
       let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
       let now_str = get_datetime_str();
@@ -282,8 +271,7 @@ function process_weekly_devices(db, weekly_devices, encrypted) {
   }
 
   let map = new Map()
-  for (let i in weekly_devices) {
-    let wd = weekly_devices[i];
+  for (let wd of weekly_devices) {
     let sid = wd.sid;
     let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
     let key = sid+ '|' + d;
@@ -294,8 +282,7 @@ function process_weekly_devices(db, weekly_devices, encrypted) {
   }
 
   let wds_new = [];
-  for (let i in weekly_devices) {
-    let wd = weekly_devices[i];
+  for (let wd of weekly_devices) {
     let sid = wd.sid;
     let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
     let key = sid + '|' + d;
@@ -316,12 +303,12 @@ function process_weekly_devices(db, weekly_devices, encrypted) {
   let wds_in_db = []
   for (let key of map.keys()) {
     let value = map.get(key);
-    for (let i in value) {
+    for (let v of value) {
       wds_in_db.push({
-        "count": value[i].count.toString(),
-        "device": value[i].device,
-        "sid":  value[i].sid.toString(),
-        "timestamp": get_seconds_from_date_str(value[i].timestamp)
+        "count": v.count.toString(),
+        "device": v.device,
+        "sid":  v.sid.toString(),
+        "timestamp": get_seconds_from_date_str(v.timestamp)
       });
     }
   }
@@ -342,8 +329,7 @@ function process_weekly_devices(db, weekly_devices, encrypted) {
   console.log('merged_wds:', JSON.stringify(merged_wds));
   
   let keys = []
-  for (let i in merged_wds) {
-    let wd = merged_wds[i];
+  for (let wd of merged_wds) {
     let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
     if (!keys.includes(wd.sid + '|' + d)) {
       db.prepare("DELETE FROM weekly_devices_enc where site_id = ? and date = ?").run(wd.sid, d);
@@ -351,8 +337,7 @@ function process_weekly_devices(db, weekly_devices, encrypted) {
     }
   }
 
-  for (let i in merged_wds) {
-    let wd = merged_wds[i];
+  for (let wd of merged_wds) {
     let d = get_date_str(get_datetime_str(wd.timestamp * 1000));
     let now_str = get_datetime_str();
     let stmt = db.prepare("INSERT INTO weekly_devices_enc(site_id, device, count, date, created_at, updated_at) VALUES(?, ?, ?, ?, ?, ?)");

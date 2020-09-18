@@ -21,7 +21,7 @@ function get_daily_stats(db, encrypted) {
         last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
       }
     } else {
-      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000 + 24 * 3600;
+      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000;// + 24 * 3600;
     }
   }
   
@@ -30,8 +30,8 @@ function get_daily_stats(db, encrypted) {
     return;
   }
 
-  let today = Math.floor(new Date().getTime() / 1000 / 24 / 3600) * 24 * 3600;
-  if (today <= last_date) {
+  let today = Math.floor(new Date().getTime() / 1000 / 24 / 3600) * 24 * 3600 + 24 * 3600;
+  if (today < last_date) {
     console.log("get_daily_stats: too quick request");
     return;
   }
@@ -47,13 +47,13 @@ function get_daily_stats(db, encrypted) {
   }
 
   let stats = [];
-  for (let i in result) {
+  for (let row of result) {
     let hs = {
-      "sid" : result[i].site_id.toString(),
-      "pv_count": result[i].pv_count.toString(),
-      "cid_count": result[i].clients_count.toString(),
-      "avg_duration": result[i].avg_duration_in_seconds.toString(),
-      "timestamp": new Date(result[i].date + 'Z').getTime() / 1000,
+      "sid" : row.site_id.toString(),
+      "pv_count": row.pv_count.toString(),
+      "cid_count": row.clients_count.toString(),
+      "avg_duration": row.avg_duration_in_seconds.toString(),
+      "timestamp": new Date(row.date + 'Z').getTime() / 1000,
     };
 
     stats.push(hs);
@@ -78,8 +78,7 @@ function get_daily_stats(db, encrypted) {
   }
 
   if (!encrypted) {
-    for (let i in stats) {
-      let stat = stats[i];
+    for (let stat of stats) {
       let d = get_date_str(get_datetime_str(stat.timestamp * 1000));
       let now_str = get_datetime_str();
       let result = db.prepare("SELECT * from daily_stats_reports where site_id = ? and date = ?").all(stat.sid, d);
@@ -95,8 +94,7 @@ function get_daily_stats(db, encrypted) {
     return;
   }
 
-  for (let i in stats) {
-    let stat = stats[i];
+  for (let stat of stats) {
     let d = get_date_str(get_datetime_str(stat.timestamp * 1000));
     let now_str = get_datetime_str();
     let result = db.prepare("SELECT * from daily_stats_reports_enc where site_id = ? and date = ?").all(stat.sid, d);

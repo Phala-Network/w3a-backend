@@ -5,13 +5,12 @@ const { update_online_users } = require('./update_online_users')
 const { get_daily_stats } = require('./get_daily_stats')
 const { set_page_views } = require('./set_page_views')
 const { clear_page_views } = require('./clear_page_views')
-const { init_db } = require('./utils');
-
+const { get_day_of_month, init_db } = require('./utils');
 
 const sleep = ms => new Promise( res => setTimeout(res, ms));
 const db = new sqlite("../db/development.sqlite3");
 
-const ENCRYPTED = true;
+const ENCRYPTED = false;
 
 async function main() {
   let args = process.argv.slice(2)
@@ -43,8 +42,8 @@ async function main() {
       }
     }
 
-    if (new Date().getDate() != day) {
-      if (waiting_mode) day = new Date().getDate();
+    if (get_day_of_month() != day) {
+      if (waiting_mode) day = get_day_of_month();
       get_daily_stats(db, ENCRYPTED);
     }
 

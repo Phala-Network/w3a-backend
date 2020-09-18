@@ -33,9 +33,7 @@ function set_page_views(db, encrypted) {
   }
 
   let rows = [];
-  for (let i in page_views) {
-    let pv = page_views[i];
-
+  for (let pv of page_views) {
     let row = {
       "id": pv.id,
       "sid": pv.sid,
