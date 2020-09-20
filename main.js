@@ -10,7 +10,12 @@ const { get_day_of_month, init_db } = require('./utils');
 const sleep = ms => new Promise( res => setTimeout(res, ms));
 const db = new sqlite("../db/development.sqlite3");
 
-const ENCRYPTED = false;
+const ENCRYPTED = true;
+
+async function wait(interval) {
+  console.log(`[${new Date().toLocaleString()}] wait for ${interval} seconds ...\n`);
+  await sleep(interval * 1000);
+}
 
 async function main() {
   let args = process.argv.slice(2)
@@ -30,7 +35,11 @@ async function main() {
   while (true) {
 
     let result = set_page_views(db, ENCRYPTED);
-    if (result.end == 0) break; //no data or has an error 
+    if (result.end == 0) {
+      await wait(interval);
+      continue;
+    }
+
     let waiting_mode = Math.floor(new Date().getTime() / 60000) == Math.floor(result.end/60);
     if (result.success)
       update_online_users(db, result.end);
@@ -48,8 +57,7 @@ async function main() {
     }
 
     if (waiting_mode) {
-      console.log(`[${new Date().toLocaleString()}] wait for ${interval} seconds ...\n`);
-      await sleep(interval * 1000);
+      await wait(interval);
     }
   }
 }
