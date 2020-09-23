@@ -45,7 +45,7 @@ function get_first_day_of_week(date, from_monday) {
 
 function get_day_of_month() {
   let offset = new Date().getTimezoneOffset(); // in minutes
-  let d = new Date().getTime() + (0 - offset) * 60 * 1000;
+  let d = new Date().getTime() + offset * 60 * 1000;
   return new Date(d).getDate();
 }
 

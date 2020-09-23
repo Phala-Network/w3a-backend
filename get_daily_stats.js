@@ -11,7 +11,7 @@ function get_daily_stats(db, encrypted) {
         last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
       }
     } else {
-      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000 + 24 * 3600;
+      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000;
     }
   } else {
     const last_get_daily_stats = db.prepare("SELECT date from daily_stats_reports_enc order by date desc").all();
@@ -21,7 +21,7 @@ function get_daily_stats(db, encrypted) {
         last_date = new Date(hourly_stats[0].date + 'Z') / 1000;  
       }
     } else {
-      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000;// + 24 * 3600;
+      last_date = new Date(last_get_daily_stats[0].date + 'Z') / 1000;
     }
   }
   
