@@ -25,7 +25,7 @@ async function main() {
   }
 
   if (args.length >= 1 && args[0] == "set") {
-    set_page_views(db);    
+    set_page_views(db, ENCRYPTED);    
     return;
   }
 
