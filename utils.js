@@ -51,7 +51,8 @@ function get_day_of_month() {
 
 function init_db(db) {
   db.prepare("delete from key_values").run();
-    
+  
+  db.prepare("delete from page_views").run();
   db.prepare("delete from online_users_reports").run();
   db.prepare("delete from online_users_reports_enc").run();
   
