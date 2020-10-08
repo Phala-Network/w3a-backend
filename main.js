@@ -8,7 +8,7 @@ const { clear_page_views } = require('./clear_page_views')
 const { get_day_of_month, init_db } = require('./utils');
 
 const sleep = ms => new Promise( res => setTimeout(res, ms));
-const db = new sqlite("../db/development.sqlite3");
+const db = new sqlite("../w3a-gateway/db/development.sqlite3");
 
 const ENCRYPTED = true;
 
