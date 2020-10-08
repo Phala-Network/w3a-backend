@@ -38,7 +38,7 @@ function set_page_views(db, encrypted) {
       "id": pv.id,
       "sid": pv.sid,
       "cid": pv.cid,
-      "uid": pv.uid,
+      "uid": pv.uid == null ? "" : pv.uid,
       "host": pv.host,
       "path": pv.path,
       "referrer": pv.referrer,
