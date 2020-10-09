@@ -12,4 +12,5 @@ sed 's/localhost/'$DOCKER_IP'/g' public/page2.html > page2.tmp && mv page2.tmp p
 node server &
 echo start TEE ...
 cd /root/prebuilt
+source /opt/sgxsdk/environment
 ./app
